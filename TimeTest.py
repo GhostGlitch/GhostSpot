@@ -1,31 +1,21 @@
 import time
 import subprocess
+avg_exec_count = 3
 
-# Script 1
-def Script_1():
+def get_execution_time(path):
     start_time = time.time()
-    subprocess.call(['python', 'tst.py'])
+    subprocess.call(['python', path])
     end_time = time.time()
     return (end_time - start_time)
-
-
-# Script 2
-def Script_2():
-    start_time = time.time()
-    subprocess.call(['python', 'GhostSpot.py'])
-    end_time = time.time()
-    execution_time = end_time - start_time
-    return (end_time - start_time)
-    print(f"Script 2 execution time: {execution_time} seconds")
 
 if __name__ == "__main__":
-    one_time = Script_1()
-    two_time = Script_2()
-    print(f"\nScript 1 execution time: {one_time} seconds")
-    print(f"\nScript 2 execution time: {two_time} seconds")
-    one_ten_times = sum([Script_1() for _ in range(10)]) / 10
-    two_ten_times = sum([Script_2() for _ in range(10)]) / 10
-    print(f"\nScript 1 single execution time: {one_time} seconds")
-    print(f"\nScript 2 single execution time: {two_time} seconds")
-    print(f"\nScript 1 average execution time: {one_ten_times} seconds")
-    print(f"\nScript 2 average execution time: {two_ten_times} seconds")
+    one_sngl_time = get_execution_time('tst.py')
+    two_sngl_time = get_execution_time('GhostSpot.py')
+    print(f"\nScript 1 execution time: {one_sngl_time} seconds")
+    print(f"\nScript 2 execution time: {two_sngl_time} seconds")
+    one_avg_time = sum([get_execution_time('tst.py') for _ in range(avg_exec_count)]) / avg_exec_count
+    two_avg_time = sum([get_execution_time('GhostSpot.py') for _ in range(avg_exec_count)]) / avg_exec_count
+    print(f"\nScript 1 single execution time: {one_sngl_time} seconds")
+    print(f"\nScript 2 single execution time: {two_sngl_time} seconds")
+    print(f"\nScript 1 average execution time: {one_avg_time} seconds")
+    print(f"\nScript 2 average execution time: {two_avg_time} seconds")
