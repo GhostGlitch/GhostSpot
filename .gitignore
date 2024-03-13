@@ -2,4 +2,5 @@ clipbord.py
 tst.py
 tst2.py
 test_GhostSpot.py
-.vscode/settings.json
+.vscode/
+__pycache__/
