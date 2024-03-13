@@ -25,16 +25,11 @@ async def get_media_info() -> list:
     threaddict2 = {}
     for index, sesh in enumerate(sessions):
         props = await sesh.try_get_media_properties_async()
-        threaddict[f"thread{index}"] = threading.Thread(target=trans_sesh, args =(props, index))
+        stream = await props.thumbnail.open_read_async()
+        threaddict[f"thread{index}"] = threading.Thread(target=trans_sesh, args =(props, stream))
     for thread in threaddict.values():
         thread.start()
     index = len(threaddict) -1
-    threaddict[f"thread{index}"].join()
-    for index, sesh in enumerate(tst):
-        stream = await tst[index]['thumbnail'].open_read_async()
-        threaddict[f"thread{index}"] = threading.Thread(target=ref_to_img, args =(stream, index))
-    for thread in threaddict.values():
-        thread.start()
     threaddict[f"thread{index}"].join()
 
 
@@ -44,7 +39,7 @@ async def get_media_info() -> list:
 
 
 
-def trans_sesh(props, index):
+def trans_sesh(props, stream):
     """ Translates a Windows TCS object into a more Python friendly dictionary.
     Returns:
         A rougly organized dictionary of the TCS object's attributes. 
@@ -60,13 +55,15 @@ def trans_sesh(props, index):
         # Converts the genres property to a Python list.
         'genres': list(props.genres),
         # Converts the thumbnail property to a PIL image.
-        'thumbnail': (props.thumbnail),
+        'thumbnail': (ref_to_img(stream, 0)),
         'track_number': props.track_number,
         'album_track_count': props.album_track_count,
         'playback_type': props.playback_type,
         'subtitle': props.subtitle
     } 
     tst.append(transed_sesh)
+    print (transed_sesh)
+    transed_sesh['thumbnail'].show()
     return transed_sesh
 
 
@@ -80,14 +77,11 @@ def ref_to_img(stream, index) -> Image:
     # Reads data from the buffer into the image_bytes bytearray.
     DataReader.from_buffer(img_buffer).read_bytes(image_bytes)
     # Converts the bytearray to a PIL image and returns it.
-    img = Image.open(io.BytesIO(image_bytes))
-    tst2.append(Image.open(io.BytesIO(image_bytes)))  
-    return 
+
+    return Image.open(io.BytesIO(image_bytes))
 
 
 # only run if the module is run directly.
 if __name__ == '__main__':
     sessions = asyncio.run(get_media_info())
-    if tst:
-         print (tst)
-         [i.show() for i in tst2]
+  
