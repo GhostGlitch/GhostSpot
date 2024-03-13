@@ -8,43 +8,40 @@ from winsdk.windows.media.control \
 from winsdk.windows.media.control \
     import GlobalSystemMediaTransportControlsSession as TCS
 from winsdk.windows.storage.streams \
-    import Buffer, InputStreamOptions, DataReader, IRandomAccessStreamReference
+    import Buffer, InputStreamOptions, DataReader, IRandomAccessStreamWithContentType
 from PIL import Image
 import threading
-tst = []
-tst2 = []
+tst: list[dict[str, str|Image.Image]] = []
+
+
+
 
 
 async def get_media_info() -> list:
     """ Returns a list of all active media as dicts of thier properties. """
     # Gets a list of all active TCS objects
-    sessions= list((await TCSManager.request_async()).get_sessions())
+    sessions= list((await TCSManager.request_async()).get_sessions()) # type: ignore
+    if not sessions:
+        return []
+        # If no active sessions are found, returns an empty list.
     # Returns a list of dictionaries of media info properties for each active
-        # session, unless none can be found.
-    threaddict = {}
-    threaddict2 = {}
+    # session, unless none can be found.
+    threaddict: dict[str, threading.Thread] = {}
     for index, sesh in enumerate(sessions):
         props = await sesh.try_get_media_properties_async()
-        threaddict[f"thread{index}"] = threading.Thread(target=trans_sesh, args =(props, index))
+        stream = await props.thumbnail.open_read_async() # type: ignore
+        threaddict[f"thread{index}"] = threading.Thread(target=trans_sesh, args =(props, stream))
     for thread in threaddict.values():
         thread.start()
     index = len(threaddict) -1
-    threaddict[f"thread{index}"].join()
-    for index, sesh in enumerate(tst):
-        stream = await tst[index]['thumbnail'].open_read_async()
-        threaddict[f"thread{index}"] = threading.Thread(target=ref_to_img, args =(stream, index))
-    for thread in threaddict.values():
-        thread.start()
     threaddict[f"thread{index}"].join()
 
 
     return tst
 
-    return None
 
 
-
-def trans_sesh(props, index):
+def trans_sesh(props, stream):
     """ Translates a Windows TCS object into a more Python friendly dictionary.
     Returns:
         A rougly organized dictionary of the TCS object's attributes. 
@@ -60,7 +57,7 @@ def trans_sesh(props, index):
         # Converts the genres property to a Python list.
         'genres': list(props.genres),
         # Converts the thumbnail property to a PIL image.
-        'thumbnail': (props.thumbnail),
+        'thumbnail': (ref_to_img(stream, 0)),
         'track_number': props.track_number,
         'album_track_count': props.album_track_count,
         'playback_type': props.playback_type,
@@ -70,24 +67,23 @@ def trans_sesh(props, index):
     return transed_sesh
 
 
-def ref_to_img(stream, index) -> Image:
+def ref_to_img(stream:IRandomAccessStreamWithContentType, index) -> Image.Image:
     img_buffer = Buffer(stream.size)
-        # Reads data from the stream into the buffer 
-    stream.read_async(img_buffer, img_buffer.capacity, \
-    InputStreamOptions.READ_AHEAD)
+    # Reads data from the stream into the buffer 
+    stream.read_async(img_buffer, img_buffer.capacity, InputStreamOptions.READ_AHEAD)  # type: ignore
     """ Converts an IRandomAccessStreamReference object to a PIL image. """    # Opens a stream from the reference
     image_bytes = bytearray(img_buffer.capacity)
     # Reads data from the buffer into the image_bytes bytearray.
-    DataReader.from_buffer(img_buffer).read_bytes(image_bytes)
+    DataReader.from_buffer(img_buffer).read_bytes(image_bytes) # type: ignore
     # Converts the bytearray to a PIL image and returns it.
-    img = Image.open(io.BytesIO(image_bytes))
-    tst2.append(Image.open(io.BytesIO(image_bytes)))  
-    return 
+
+    return Image.open(io.BytesIO(image_bytes))
 
 
 # only run if the module is run directly.
 if __name__ == '__main__':
     sessions = asyncio.run(get_media_info())
     if tst:
-         print (tst)
-         [i.show() for i in tst2]
+        for sesh in sessions:
+            print(sesh)
+            sesh['thumbnail'].show()
