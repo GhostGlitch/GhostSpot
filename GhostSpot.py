@@ -36,7 +36,7 @@ async def get_media_info() -> list:
     return info
 
 
-def trans_sesh(props, stream, tst: list[dict[str, str|Image.Image]]):
+def trans_sesh(props, stream, tst: list[dict[str, str | int | list | Image.Image]]):
     """ Translates a Windows TCS object into a more Python friendly dictionary.
     Returns:
         A rougly organized dictionary of the TCS object's attributes. 
