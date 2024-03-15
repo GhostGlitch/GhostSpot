@@ -1,4 +1,4 @@
-__version__ = '0.8'
+__version__ = '0.8.5'
 __author__ = 'Ghost Glitch'
 
 import asyncio
@@ -14,11 +14,12 @@ from winsdk.windows.media import MediaPlaybackType
 from winsdk.windows.storage.streams \
     import Buffer, InputStreamOptions, DataReader, IRandomAccessStreamReference
 from PIL import Image
+import sys
+print(sys.version)
 
 
 
-
-@dataclass()
+@dataclass
 class PySession():
     """ A dataclass to store the properties of a TCS object in a more Pythonic way. """
 
@@ -34,15 +35,34 @@ class PySession():
         self.playback_type = playback_type
         self.subtitle = subtitle
     def __str__(self) -> str:
-        return (f'Title: {self.title} | '
-                f'Artist: {self.artist} | '
-                f'Album Title: {self.album_title} | '
-                f'Album Artist: {self.album_artist} | '
-                f'Genres: {self.genres} | '
-                f'Track Number: {self.track_number} | '
-                f'Album Track Count: {self.album_track_count} | '
-                f'Playback Type: {self.playback_type.name} | '
-                f'Subtitle: {self.subtitle} | ')
+        attributes = {
+            'Album Artist': self.album_artist,
+            'Genres': self.genres,
+            'Track Number': self.track_number,
+            'Album Track Count': self.album_track_count,
+            'Playback Type': self.playback_type.name,
+            'Subtitle': self.subtitle
+        }
+        basic = (f'”{self.title}” BY {self.artist} ON {self.album_title} \n')
+        return basic + ' | '.join(f'{name}: {value}' for name, value in attributes.items() if value)
+    
+    def __setattr__(self, __name: str, __value: Any) -> None:
+        match __name:
+            case "title":
+                __value = "Unknown Title" if not __value else __value 
+            case "artist":
+                __value = "Unknown Artist" if not __value else __value 
+            case "album_title":
+                __value = "Unknown Album" if not __value else __value 
+            case "album_artist":
+                __value = None if not __value or __value == self.artist else __value
+            case "genres" | "track_number" | "album_track_count" | "subtitle" | "thumbnail":
+                __value = None if not __value else __value 
+            case "playback_type":
+                __value = MediaPlaybackType.UNKNOWN if not __value else __value 
+            case _:
+                raise ValueError(f'Invalid attribute name: {__name}')
+        super().__setattr__(__name, __value)
 
 
 async def get_media_info() -> list[PySession]:
@@ -75,19 +95,13 @@ async def ref_to_img(stream_ref: IRandomAccessStreamReference) -> Image.Image:
 
     return Image.open(io.BytesIO(image_bytes))
 
-async def output(sesh : PySession, i: int) -> None:
-    print (f'\nMedia {i+1}:')
-    print (sesh)
-    sesh.thumbnail.show()
-    return
-
 
 if __name__ == '__main__':
     sessions = asyncio.run(get_media_info())
     if sessions:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        tasks = [output(sesh, i) for i, sesh in enumerate(sessions)]
-        loop.run_until_complete(asyncio.gather(*tasks))
+        for i, sesh in enumerate(sessions):
+            print (f'\nMedia {i+1}:')
+            print (sesh)
+            sesh.thumbnail.show()
     else:
         print('No active media found.')
