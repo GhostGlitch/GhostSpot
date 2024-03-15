@@ -59,9 +59,7 @@ async def trans_sesh(sesh: TCS) -> PySession:
     """ Translates a Windows TCS object into PySession Object. """
     props = await sesh.try_get_media_properties_async()
     assert props.thumbnail is not None
-    trans_sesh = PySession(props.title, props.artist, props.album_title, props.album_artist, list(props.genres), await ref_to_img(props.thumbnail), props.track_number, props.album_track_count, props.playback_type, props.subtitle) # type: ignore
-    # Creates a dictionary from a MediaProperties object.
-    return trans_sesh
+    return PySession(props.title, props.artist, props.album_title, props.album_artist, list(props.genres), await ref_to_img(props.thumbnail), props.track_number, props.album_track_count, props.playback_type, props.subtitle) # type: ignore
 
 
 async def ref_to_img(stream_ref: IRandomAccessStreamReference) -> Image.Image:
