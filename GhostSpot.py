@@ -2,51 +2,66 @@ __version__ = '0.8'
 __author__ = 'Ghost Glitch'
 
 import asyncio
+from enum import Enum
 import io
 from typing import Any
+from dataclasses import dataclass
+
 from winsdk.windows.media.control \
-    import GlobalSystemMediaTransportControlsSessionManager as TCSManager
-from winsdk.windows.media.control \
-    import GlobalSystemMediaTransportControlsSession as TCS
+    import GlobalSystemMediaTransportControlsSessionManager as TCSManager, \
+        GlobalSystemMediaTransportControlsSession as TCS
+from winsdk.windows.media import MediaPlaybackType
 from winsdk.windows.storage.streams \
     import Buffer, InputStreamOptions, DataReader, IRandomAccessStreamReference
 from PIL import Image
 
 
 
-async def get_media_info() -> list:
+
+@dataclass()
+class PySession():
+    """ A dataclass to store the properties of a TCS object in a more Pythonic way. """
+
+    def __init__(self, title: str, artist: str, album_title: str, album_artist: str, genres: list[str], thumbnail: Image.Image, track_number: int, album_track_count: int, playback_type: MediaPlaybackType | None, subtitle: str) -> None:
+        self.title = title
+        self.artist = artist
+        self.album_title = album_title
+        self.album_artist = album_artist
+        self.genres = genres
+        self.thumbnail = thumbnail
+        self.track_number = track_number
+        self.album_track_count = album_track_count
+        self.playback_type = playback_type
+        self.subtitle = subtitle
+    def __str__(self) -> str:
+        return (f'Title: {self.title} | '
+                f'Artist: {self.artist} | '
+                f'Album Title: {self.album_title} | '
+                f'Album Artist: {self.album_artist} | '
+                f'Genres: {self.genres} | '
+                f'Track Number: {self.track_number} | '
+                f'Album Track Count: {self.album_track_count} | '
+                f'Playback Type: {self.playback_type.name} | '
+                f'Subtitle: {self.subtitle} | ')
+
+
+async def get_media_info() -> list[PySession]:
     """ Returns a list of all active media as dicts of thier properties. """
     # Gets a list of all active TCS objects
-    sessions= list((await TCSManager.request_async()).get_sessions()) # type: ignore
-    # Returns a list of dictionaries of media info properties for each active
-        # session, unless none can be found.
-    coroutines = [trans_sesh(sesh) for sesh in sessions]
-    return await asyncio.gather(*coroutines) if sessions else []
+    sessions= list((await TCSManager.request_async()).get_sessions())  # type: ignore
+    # Returns a list of PySessions for each active
+    # session, unless none can be found.
+    return [] if not sessions else \
+        await asyncio.gather (*[trans_sesh(sesh) for sesh in sessions])
 
 
-async def trans_sesh(sesh: TCS) -> dict[str, Any]:
-    """ Translates a Windows TCS object into a more Python friendly dictionary.
-    Returns:
-        A rougly organized dictionary of the TCS object's attributes. 
-        Including the thumbnail as a PIL image and the genres as a list. 
-    """
+async def trans_sesh(sesh: TCS) -> PySession:
+    """ Translates a Windows TCS object into PySession Object. """
     props = await sesh.try_get_media_properties_async()
+    assert props.thumbnail is not None
+    trans_sesh = PySession(props.title, props.artist, props.album_title, props.album_artist, list(props.genres), await ref_to_img(props.thumbnail), props.track_number, props.album_track_count, props.playback_type, props.subtitle) # type: ignore
     # Creates a dictionary from a MediaProperties object.
-    transed_sesh = {
-        'title': props.title,
-        'artist': props.artist,
-        'album_title': props.album_title,
-        'album_artist': props.album_artist,
-        # Converts the genres property to a Python list.
-        'genres': list(props.genres), # type: ignore
-        # Converts the thumbnail property to a PIL image.
-        'thumbnail': await ref_to_img(props.thumbnail), # type: ignore
-        'track_number': props.track_number,
-        'album_track_count': props.album_track_count,
-        'playback_type': props.playback_type.value, # type: ignore
-        'subtitle': props.subtitle
-    }
-    return transed_sesh
+    return trans_sesh
 
 
 async def ref_to_img(stream_ref: IRandomAccessStreamReference) -> Image.Image:
@@ -62,15 +77,19 @@ async def ref_to_img(stream_ref: IRandomAccessStreamReference) -> Image.Image:
 
     return Image.open(io.BytesIO(image_bytes))
 
+async def output(sesh : PySession, i: int) -> None:
+    print (f'\nMedia {i+1}:')
+    print (sesh)
+    sesh.thumbnail.show()
+    return
 
-# only run if the module is run directly.
+
 if __name__ == '__main__':
     sessions = asyncio.run(get_media_info())
     if sessions:
-        print(sessions)
-        for i, sesh in enumerate(sessions):
-            print (f'\nMedia {i+1}:')
-            print(sesh)
-            sesh['thumbnail'].show()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        tasks = [output(sesh, i) for i, sesh in enumerate(sessions)]
+        loop.run_until_complete(asyncio.gather(*tasks))
     else:
-        print ( 'No active media found.')
+        print('No active media found.')
