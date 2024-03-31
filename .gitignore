@@ -1,6 +1,7 @@
 clipbord.py
 tst.py
 tst2.py
-test_GhostSpot.py
 .vscode/
 __pycache__/
+coverage.xml
+GhostSpot copy.py
