@@ -85,19 +85,20 @@ class GhostConverters:
             """Converts a variety of types to a valid album title."""
             return GhostConverters.Strs.__base(arg, 'Unknown Album', 'Album Title')
         @classmethod
-        def to_opt(self, arg) -> Opt[str]:
+        def to_opt(cls, arg) -> Opt[str]:
             """Converts to an optional str"""
-            return None if arg == 0 else self.__base(arg, None, 'either Subtitle or Album Artist')
+            return None if arg == 0 else cls.__base(arg, None, 'either Subtitle or Album Artist')
         
     @staticmethod
-    def to_Image(arg) -> Image.Image:
+    def to_img(arg) -> Image.Image:
         """Converts a variety of types to a Pillow image."""
         if isinstance(arg, Image.Image):
             return arg
-        elif isinstance(arg, IRandomAccessStreamReference):
-            warn (f'Setting thumbnail directly from type IRandomAcessStreamReference not recommended. Automatic conversion can not be async, may block. Use GhostConverters.ref_to_thumb before setting.')
+        if isinstance(arg, IRandomAccessStreamReference):
+            warn ('Setting thumbnail directly from type IRandomAcessStreamReference not recommended. Automatic conversion can not be async, may block. Use GhostConverters.ref_to_thumb before setting.')
             return coro_in_thread(GhostConverters.ref_to_thumb, arg)
-        elif isinstance(arg, str):
+        
+        if isinstance(arg, str):
             try:
                 return Image.open(arg)
             except FileNotFoundError as e:
@@ -212,7 +213,7 @@ class C:
         '''GhostConverters.Strs.to_opt:'''
     PT = GhostConverters.to_PT
     '''GhostConverters.to_PT:'''
-    IMG = GhostConverters.to_Image
+    IMG = GhostConverters.to_img
     '''GhostConverters.to_Image'''
     class OPT:
         '''contains aliases for some variants of converters.optional()
@@ -287,7 +288,7 @@ async def get_media_info() -> list[PySession]:
     """ Returns a list of PySessions for each active media session."""
     # Gets a tuple of all active TCS objects
     sessions= (await TCSManager.request_async()).get_sessions()  # type: ignore
-    return await asyncio.gather (*[PySession.from_TCS_async(sesh) for sesh in sessions])
+    return await asyncio.gather (*[PySession.from_TCS_async(sesh) for sesh in sessions])# type: ignore
 
 if __name__ == '__main__':
     sessions = asyncio.run(get_media_info())
