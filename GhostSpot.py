@@ -94,11 +94,10 @@ class GhostConverters:
         """Converts a variety of types to a Pillow image."""
         if isinstance(arg, Image.Image):
             return arg
-        if isinstance(arg, IRandomAccessStreamReference):
+        elif isinstance(arg, IRandomAccessStreamReference):
             warn ('Setting thumbnail directly from type IRandomAcessStreamReference not recommended. Automatic conversion can not be async, may block. Use GhostConverters.ref_to_thumb before setting.')
             return coro_in_thread(GhostConverters.ref_to_thumb, arg)
-        
-        if isinstance(arg, str):
+        elif isinstance(arg, str):
             try:
                 return Image.open(arg)
             except FileNotFoundError as e:
