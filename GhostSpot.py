@@ -4,9 +4,10 @@ __author__ = 'Ghost Glitch'
 from enum import Enum
 from typing import Optional as Opt
 import asyncio
-from warnings import warn as warning
+from warnings import warn
 import io
 from threading import Thread
+from functools import partial
 
 from attrs import define, field
 from attrs import validators as v, converters as c
@@ -35,10 +36,6 @@ class PlaybackType(Enum):
             return cls.VIDEO
         elif mpt == MPT.IMAGE:
             return cls.IMAGE
-        else:
-            return cls.UNKNOWN
-    @classmethod
-    def default(cls) -> 'PlaybackType':
         return cls.UNKNOWN
 
     def to_MPT(self) -> MPT:
@@ -48,8 +45,7 @@ class PlaybackType(Enum):
             return MPT.VIDEO
         elif self == self.IMAGE:
             return MPT.IMAGE
-        else:
-            return MPT.UNKNOWN
+        return MPT.UNKNOWN
 
 def coro_in_thread(coro, *args, **kwargs):
     def idk(future, coro, *args, **kwargs):
@@ -59,117 +55,206 @@ def coro_in_thread(coro, *args, **kwargs):
     thr.start()
     thr.join()
     return future.result()
-
-def Image_catch(arg) -> Image.Image:
-
-    if isinstance(arg, Image.Image):
-        return arg
-    elif isinstance(arg, IRandomAccessStreamReference):
-        return coro_in_thread(ref_to_thumb, arg)
-
-    elif isinstance(arg, str):
-        try:
-            return Image.open(arg)
-        except FileNotFoundError:
-            warning(f'File {arg} not found for Image conversion. Returning ERROR_THUMB.')
-            return ERROR_THUMB
-        except OSError:
-            warning(f'File {arg} not a valid image for Image conversion. Returning ERROR_THUMB.')
-            return ERROR_THUMB
-    elif isinstance(arg, bytes) or isinstance(arg, bytearray) or isinstance(arg, np.array):
-        try:
-            return Image.open(io.BytesIO(arg))
-        except OSError:
-            warning(f'Bytes not a valid image for Image conversion. Returning ERROR_THUMB.')
-            return ERROR_THUMB
-    else:
-        warning(f'Invalid type {type(arg)} for Image conversion. Returning ERROR_THUMB.')
+@define(frozen=True, slots=True)
+class GhostConverters:
+    """Contains custom conversion functions for PySessions."""
+    class Strs:
+        """Contains conversion functions for strings."""
+        @staticmethod
+        def __base(arg, default, type) -> str:
+            """base function for string conversion functions."""
+            if arg == 0 or arg:  #allows only truthy values and 0
+                try :
+                    return str(arg)
+                except Exception as e:
+                    warn (f'{e}: Cannot convert {arg} to string for {type} conversion. Returning {default}')
+            else:
+                warn (f'{arg} is falsy. Returning {default} for {type}')
+            return default
+        
+        @staticmethod
+        def to_title(arg) -> str:
+            """Converts a variety of types to a valid title."""
+            return GhostConverters.Strs.__base(arg, 'Unknown Title', 'Title')
+        @staticmethod
+        def to_artist(arg) -> str:
+            """Converts a variety of types to a valid artist."""
+            return GhostConverters.Strs.__base(arg, 'Unknown Artist', 'Artist')
+        @staticmethod
+        def to_album_title(arg) -> str:
+            """Converts a variety of types to a valid album title."""
+            return GhostConverters.Strs.__base(arg, 'Unknown Album', 'Album Title')
+        @classmethod
+        def to_opt(self, arg) -> Opt[str]:
+            """Converts to an optional str"""
+            return None if arg == 0 else self.__base(arg, None, 'either Subtitle or Album Artist')
+        
+    @staticmethod
+    def to_Image(arg) -> Image.Image:
+        """Converts a variety of types to a Pillow image."""
+        if isinstance(arg, Image.Image):
+            return arg
+        elif isinstance(arg, IRandomAccessStreamReference):
+            warn (f'Setting thumbnail directly from type IRandomAcessStreamReference not recommended. Automatic conversion can not be async, may block. Use GhostConverters.ref_to_thumb before setting.')
+            return coro_in_thread(GhostConverters.ref_to_thumb, arg)
+        elif isinstance(arg, str):
+            try:
+                return Image.open(arg)
+            except FileNotFoundError as e:
+                warn(f'{e}: {arg} not found for Image conversion. Returning ERROR_THUMB.')
+            except OSError as e:
+                warn(f'{e}: File {arg} not a valid image for Image conversion. Returning ERROR_THUMB.')
+            except Exception as e:
+                warn(f'{e}: Cannot open file {arg} for Image conversion. Returning ERROR_THUMB.')
+        elif isinstance(arg, bytes) or isinstance(arg, bytearray) or isinstance(arg, np.array):
+            try:
+                return Image.open(io.BytesIO(arg))
+            except OSError as e:
+                warn(f'{e}: Bytes {arg} not a valid image for Image conversion. Returning ERROR_THUMB.') #type: ignore
+            except Exception as e:
+                warn(f'{e}: Cannot open bytes {arg} for Image conversion. Returning ERROR_THUMB.') #type: ignore
+        else:
+            warn(f'TypeError: Type of {arg} ({type(arg)}) not valid for Image conversion. Returning ERROR_THUMB.')
         return ERROR_THUMB
-
-async def ref_to_thumb(stream_ref: IRandomAccessStreamReference |  None) -> Image.Image:
-    if not stream_ref:
+    @staticmethod
+    async def ref_to_thumb(stream_ref: IRandomAccessStreamReference |  None) -> Image.Image:
+        """ Returns a Pillow image from a stream reference."""
+        if isinstance(stream_ref, IRandomAccessStreamReference):
+            try:
+                # Opens a stream from the reference
+                stream = await stream_ref.open_read_async()
+                img_buffer = Buffer(stream.size)
+                # Reads data from the stream into the buffer 
+                await stream.read_async(img_buffer, img_buffer.capacity, InputStreamOptions.READ_AHEAD) 
+                return (Image.open(io.BytesIO(img_buffer)))
+            except Exception as e:
+                warn(f'{e}: Error reading stream reference {stream_ref} for ref_to_thumb. Returning ERROR_THUMB.')
+        else:
+            warn(f'TypeError: Type of {stream_ref} ({type(stream_ref)}) not valid for ref_to_thumb. Returning ERROR_THUMB.')
         return ERROR_THUMB
-    """ Converts an IRandomAccessStreamReference object to a PIL image. """    
-    # Opens a stream from the reference
-    stream = await stream_ref.open_read_async()
-    img_buffer = Buffer(stream.size)
-    # Reads data from the stream into the buffer 
-    await stream.read_async(img_buffer, img_buffer.capacity, InputStreamOptions.READ_AHEAD) 
-    return (Image.open(io.BytesIO(img_buffer)))
-
-def to_PT(arg):
-    if isinstance(arg, MPT):
-        return PlaybackType.from_MPT(arg)
-    elif np.issubdtype(type(arg), np.integer):
-        try:
-            return PlaybackType(arg)
-        except ValueError:
-            warning(f'{arg} out of range for PlaybackType conversion. Returning UNKNOWN.', )
-            return PlaybackType.UNKNOWN
-    elif isinstance(arg, PlaybackType):
-        return arg
-    elif isinstance(arg, str): 
-        try:
-            return PlaybackType[arg.upper()]
-        except KeyError:
-            warning(f'Invalid string {arg} for PlaybackType conversion. Returning UNKNOWN.')
-            return PlaybackType.UNKNOWN
-    else:
-        warning(f'Invalid type {type(arg)} for PlaybackType conversion. Returning UNKNOWN.')
+    @staticmethod
+    def to_PT(arg):
+        """Converts a variety of types to a PlaybackType."""
+        if isinstance(arg, MPT):
+            return PlaybackType.from_MPT(arg)
+        elif np.issubdtype(type(arg), np.integer):
+            try:
+                return PlaybackType(arg)
+            except ValueError as e:
+                warn(f'{e}: {arg} out of range 0-3 for PlaybackType conversion. Returning UNKNOWN.', )
+        elif isinstance(arg, PlaybackType):
+            return arg
+        elif isinstance(arg, str): 
+            try:
+                return PlaybackType[arg.upper()]
+            except KeyError as e:
+                warn(f'{e}: Invalid string {arg} for PlaybackType conversion. Returning UNKNOWN.')
+        else:
+            warn(f'TypeError: Type of {arg} ({type(arg)}) not valid for PlaybackType conversion. Returning UNKNOWN.')
         return PlaybackType.UNKNOWN
 
-class Gval:
+class GhostValidators:
+    """Contains custom validator functions for PySessions."""
     @staticmethod
     def int(inst, attr, val):
+        """Currently unused. Potentially add support for np integers. in Pysession"""
         if not np.issubdtype(type(val), np.integer):
             raise TypeError(f'{attr} must be an integer.')
+        
+# Shortened aliases for PySession field definitions to make attribute definitions not 5000 characters long.
+@define(frozen=True, slots=True)
+class V:
+    """Contains aliases for validators for PySessions. So fields fit on one line."""
+    INS = v.instance_of
+    '''validators.instance_of'''
+    STR = INS(str)
+    '''validators.instance_of(str)'''
+    INT = INS(int)
+    '''validators.instance_of(int)'''
+    TUPLE = INS(tuple)
+    '''validators.instance_of(tuple)'''
+    IMG = INS(Image.Image)
+    '''validators.instance_of(Image.Image)'''
+    PT = INS(PlaybackType)
+    '''validators.instance_of(PlaybackType)'''
+    DI = v.deep_iterable
+    class OPT:
+        '''contains aliases for some variants of validators.optional()'''
+        @staticmethod
+        def B(type):
+            return v.optional(v.instance_of(type))
+        STR = B(str)
+        '''validators.optional(validators.instance_of(str))'''
+        INT = B(int)
+        '''validators.optional(validators.instance_of(int))'''
+    class TUP:
+        B = partial(v.deep_iterable, iterable_validator=v.instance_of(tuple))
+
+        STR = B(member_validator=v.instance_of(str))
+
+    TUP_STR = DI(iterable_validator=TUPLE, member_validator=STR)
+@define(frozen=True, slots=True)
+class C:
+    """Contains aliases for converters for PySessions. So fields fit on one line."""
+    class STR:
+        '''contains aliases for GhostConverters.Strs functions.
+        \n- B = GhostConverters.Strs \n- TIT = to_title \n- ART = to_artist \n- ALB = to_album_title'''
+        B = GhostConverters.Strs
+        '''GhostConverters.Strs:'''
+        TIT = B.to_title
+        '''GhostConverters.Strs.to_title:'''
+
+        ART = B.to_artist
+        '''GhostConverters.Strs.to_artist:'''
+        ALB = B.to_album_title
+        '''GhostConverters.Strs.to_album_title:'''
+        OPT = B.to_opt
+        '''GhostConverters.Strs.to_opt:'''
+    PT = GhostConverters.to_PT
+    '''GhostConverters.to_PT:'''
+    IMG = GhostConverters.to_Image
+    '''GhostConverters.to_Image'''
+    class OPT:
+        '''contains aliases for some variants of converters.optional()
+        \n- B = converters.optional \n- INT = optional(int) \n- STR = optional(str)'''
+        B = c.optional
+        '''converters.optional:'''
+        INT = B(int)
+        '''converters.optional(int)'''
+        STR = B(str)
+        '''converters.optional(str)'''
+@define(frozen=True, slots=True)
+class D:
+    '''Contains aliases for defaults for PySession. So fields fit on one line.'''
+    ''''''
+    TIT = "Unknown Title"
+    '''"Unknown Title"'''
+    ART = "Unknown Artist"
+    '''"Unknown Artist"'''
+    ALB  = "Unknown Album"
+    '''"Unknown Album"'''
+    """Contains aliases for default values for PySessions. So fields fit on one line."""
+    PT = PlaybackType.UNKNOWN
+    '''PlaybackType.UNKNOWN'''
+    ET = ERROR_THUMB
 
 
+# Fuck you MyPy! Throws a fit if I set a default to anything other than None and adds Any to type hints and puts an error on the validator.
+# Also throws an error if converter is from a class or alias. too bad, I'm doing it anyway... 
 
-V_STR = v.instance_of(str)
-V_INT = v.instance_of(int)
-V_TUPLE = v.instance_of(tuple)
-V_IMG = v.instance_of(Image.Image)
-V_PT = v.instance_of(PlaybackType)
-V_OPT = v.optional
-V_DI = v.deep_iterable
-V_OPT_INT = V_OPT(V_INT)
-V_OPT_STR = V_OPT(V_STR)
-V_TUPLE_OF_STR = V_DI(iterable_validator=V_TUPLE, member_validator=V_STR)
-C_OPT_INT = c.optional(int)
-
-
-
-# Fuck  you, MyPy! Throws a fit if I set defaults in fields to anything other than None...
-
-@define
+@define(slots=True)
 class PySession():
-    title: str = field(default='Unknown Title', validator=V_STR)
-    artist: str = field(default='Unknown Artist', validator=V_STR)
-    album_title: str = field(default='Unknown Album', validator=V_STR)
-    album_artist: Opt[str] = field(validator=V_OPT_STR)
-    genres: tuple[str] = field(factory=tuple[str], validator=V_TUPLE_OF_STR)
-    thumbnail: Image.Image = field(default=ERROR_THUMB,converter=Image_catch)
-    track_number: Opt[int] = field(converter=c.optional(int), validator=V_OPT_INT) 
-    album_track_count: Opt[int] = field(converter=c.optional(int), validator=V_OPT_INT) 
-    playback_type: PlaybackType = field(converter=to_PT, validator=V_PT)
-    subtitle: Opt[str] = field(validator=V_OPT_STR)
-    def __attrs_post_init__(self):
-        pass
+    title: str = field(default=D.TIT, converter=C.STR.TIT, validator=V.STR)#type: ignore
+    artist: str = field(default=D.ART, converter=C.STR.ART, validator=V.STR)#type: ignore
+    album_title: str = field(default=D.ALB, converter=C.STR.ALB, validator=V.STR)#type: ignore
+    album_artist: Opt[str] = field(default=None, converter=C.STR.OPT, validator=V.OPT.STR)# type: ignore
+    genres: tuple[str] = field(factory=tuple[str], converter=tuple, validator=V.TUP.STR)# type: ignore
+    thumbnail: Image.Image = field(default=D.ET, converter=C.IMG, validator=V.IMG)#type: ignore
+    track_number: Opt[int] = field(default=0, converter=C.OPT.INT, validator=V.OPT.INT)# type: ignore
+    album_track_count: Opt[int] = field(default=0, converter=C.OPT.INT, validator=V.OPT.INT)#type: ignore
+    playback_type: PlaybackType = field(default=D.PT, converter=C.PT, validator=V.PT)#type: ignore
+    subtitle: Opt[str] = field(default=None, converter=C.STR.OPT, validator=V.OPT.STR)#type: ignore
 
-
-    # Setting defaults here because otherwise MyPy adds type Any to the hint and claims the validators are invalid.
-    @track_number.default
-    @album_track_count.default
-    def _zero_default(self) -> int:
-        return 0
-    @playback_type.default
-    def _playback_type_default(self) -> PlaybackType:
-        return PlaybackType.UNKNOWN
-    @album_artist.default
-    @subtitle.default
-    def _empty_string_default(self) -> str:
-        return ''
     def __str__(self) -> str:
         attributes = {
             'Album Artist': self.album_artist,
@@ -185,12 +270,12 @@ class PySession():
     async def from_TCS_async(cls, sesh: TCS) -> 'PySession':
         props = await sesh.try_get_media_properties_async()
         return cls(
-            title=props.title if props.title else 'Unknown Title',
-            artist=props.artist if props.artist else 'Unknown Artist',
-            album_title=props.album_title if props.album_title else 'Unknown Album',
+            title=props.title,
+            artist=props.artist,
+            album_title=props.album_title,
             album_artist=props.album_artist,
-            genres=tuple(props.genres),
-            thumbnail = props.thumbnail,
+            genres=props.genres,
+            thumbnail = await GhostConverters.ref_to_thumb(props.thumbnail),
             track_number=props.track_number,
             album_track_count=props.album_track_count,
             playback_type=props.playback_type,
